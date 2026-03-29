@@ -30,9 +30,11 @@ type ImageData struct {
 }
 
 var allFlag bool
+var bookPages int
 
 func main() {
 	flag.BoolVar(&allFlag, "all", false, "Generate report from all images in database")
+	flag.IntVar(&bookPages, "book", 0, "Select N images for a book from DB (rounded up to multiple of 4), lightest first, darkest last")
 	flag.Parse()
 
 	// Initialize database
@@ -73,9 +75,33 @@ func main() {
 		return
 	}
 
+	if bookPages > 0 {
+		imageData, err := getAllImagesFromDB(db)
+		if err != nil {
+			fmt.Printf("Error retrieving images from database: %v\n", err)
+			os.Exit(1)
+		}
+		if len(imageData) == 0 {
+			fmt.Println("No images found in database")
+			os.Exit(0)
+		}
+
+		selected := selectBookImages(imageData, bookPages)
+		actualPages := len(selected)
+		outputPath := "illuminance_book.html"
+		err = generateBookHTML(selected, bookPages, outputPath)
+		if err != nil {
+			fmt.Printf("Error generating HTML: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Book report generated with %d pages (requested %d): %s\n", actualPages, bookPages, outputPath)
+		return
+	}
+
 	if flag.NArg() < 1 {
 		fmt.Println("Usage: illuminasort <directory>")
 		fmt.Println("       illuminasort --all")
+		fmt.Println("       illuminasort --book <pages>")
 		os.Exit(1)
 	}
 
@@ -559,6 +585,193 @@ func getImageFromDB(db *sql.DB, path string) (*ImageData, error) {
 	}
 
 	return &img, nil
+}
+
+func generateBookHTML(data []ImageData, requestedPages int, outputPath string) error {
+	type PageData struct {
+		ImageData
+		PageNumber int
+	}
+	var pages []PageData
+	for i, img := range data {
+		pages = append(pages, PageData{ImageData: img, PageNumber: i + 1})
+	}
+
+	tmpl := `<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>Book Image Selection</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			max-width: 1200px;
+			margin: 0 auto;
+			padding: 20px;
+			background-color: #f5f5f5;
+		}
+		h1 {
+			color: #333;
+			text-align: center;
+		}
+		.image-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+			gap: 20px;
+			margin-top: 30px;
+		}
+		.image-card {
+			background: white;
+			border-radius: 8px;
+			padding: 15px;
+			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			text-align: center;
+		}
+		.image-card img {
+			max-width: 200px;
+			max-height: 200px;
+			width: auto;
+			height: auto;
+			object-fit: contain;
+			border-radius: 4px;
+		}
+		.page-number {
+			font-size: 18px;
+			font-weight: bold;
+			color: #333;
+			margin-bottom: 8px;
+		}
+		.image-info {
+			margin-top: 10px;
+			font-size: 14px;
+			color: #666;
+		}
+		.image-path {
+			font-size: 12px;
+			color: #999;
+			margin-top: 5px;
+			word-break: break-all;
+		}
+		.value {
+			font-weight: bold;
+			color: #333;
+		}
+		.stats {
+			background: white;
+			border-radius: 8px;
+			padding: 15px;
+			margin-bottom: 20px;
+			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		}
+	</style>
+</head>
+<body>
+	<h1>Book Image Selection</h1>
+	<div class="stats">
+		<p><strong>Requested pages:</strong> {{.RequestedPages}} &rarr; <strong>Actual pages:</strong> {{.ActualPages}} (rounded up to multiple of 4)</p>
+		<p><em>Page 1 is the lightest image, last page is the darkest, luminance spread evenly in between.</em></p>
+	</div>
+	<div class="image-grid">
+		{{range .Pages}}
+		<div class="image-card">
+			<div class="page-number">Page {{.PageNumber}}</div>
+			<img src="{{.ThumbnailDataURL}}" alt="{{.Path}}" loading="lazy">
+			<div class="image-info">
+				<div>Avg: <span class="value">{{printf "%.2f" .AverageIlluminance}}</span></div>
+				<div>Median: <span class="value">{{printf "%.2f" .MedianIlluminance}}</span></div>
+			</div>
+			<div class="image-path">{{.Path}}</div>
+		</div>
+		{{end}}
+	</div>
+</body>
+</html>`
+
+	t, err := template.New("book").Parse(tmpl)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return t.Execute(file, struct {
+		RequestedPages int
+		ActualPages    int
+		Pages          []PageData
+	}{
+		RequestedPages: requestedPages,
+		ActualPages:    len(data),
+		Pages:          pages,
+	})
+}
+
+func selectBookImages(images []ImageData, requestedPages int) []ImageData {
+	// Round up to next multiple of 4
+	pages := requestedPages
+	if pages%4 != 0 {
+		pages = pages + (4 - pages%4)
+	}
+
+	// Sort by average illuminance ascending (darkest first)
+	sorted := make([]ImageData, len(images))
+	copy(sorted, images)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].AverageIlluminance < sorted[j].AverageIlluminance
+	})
+
+	if len(sorted) <= pages {
+		// Not enough images: return all, lightest first
+		result := make([]ImageData, len(sorted))
+		for i, img := range sorted {
+			result[len(sorted)-1-i] = img
+		}
+		return result
+	}
+
+	minLum := sorted[0].AverageIlluminance
+	maxLum := sorted[len(sorted)-1].AverageIlluminance
+
+	// Pin first (lightest) and last (darkest) images explicitly
+	used := make([]bool, len(sorted))
+	selected := make([]ImageData, pages)
+	selected[0] = sorted[len(sorted)-1]
+	used[len(sorted)-1] = true
+	selected[pages-1] = sorted[0]
+	used[0] = true
+
+	// Fill intermediate pages with evenly-spaced luminance targets
+	for i := 1; i < pages-1; i++ {
+		target := maxLum - (maxLum-minLum)*float64(i)/float64(pages-1)
+
+		bestIdx := -1
+		bestDist := -1.0
+		for j, img := range sorted {
+			if used[j] {
+				continue
+			}
+			dist := img.AverageIlluminance - target
+			if dist < 0 {
+				dist = -dist
+			}
+			if bestIdx == -1 || dist < bestDist {
+				bestIdx = j
+				bestDist = dist
+			}
+		}
+		used[bestIdx] = true
+		selected[i] = sorted[bestIdx]
+	}
+
+	// Sort selected from lightest (page 1) to darkest (last page)
+	sort.Slice(selected, func(i, j int) bool {
+		return selected[i].AverageIlluminance > selected[j].AverageIlluminance
+	})
+
+	return selected
 }
 
 func getAllImagesFromDB(db *sql.DB) ([]ImageData, error) {

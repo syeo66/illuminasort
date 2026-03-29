@@ -11,6 +11,7 @@ A Go CLI tool that analyzes image illuminance and generates an HTML report.
 - Caches illuminance calculations and thumbnails to avoid reprocessing the same images
 - Generates portable HTML reports with embedded thumbnail data URLs
 - Can generate reports from all images in the database with the `--all` flag
+- Book mode (`--book`) selects a set of images from the database with evenly spread luminance, suitable for print layouts
 
 ## Installation
 
@@ -48,6 +49,25 @@ This will:
 2. Generate `illuminance_report_all.html` in the current directory
 3. The report uses embedded thumbnail data URLs, making it completely portable (no external image files needed)
 
+### Select images for a book
+
+```bash
+./illuminasort --book <pages>
+```
+
+Example:
+```bash
+./illuminasort --book 20
+```
+
+This will:
+1. Retrieve all images from the database
+2. Round the requested page count up to the next multiple of 4 (e.g. 20 → 20, 21 → 24)
+3. Select that many images with luminance values spread evenly across the full range
+4. Always assign the lightest image to page 1 and the darkest to the last page
+5. Sort the final selection from lightest to darkest
+6. Generate `illuminance_book.html` in the current directory
+
 ## Output
 
 ### Directory scan report (`illuminance_report.html`)
@@ -59,6 +79,16 @@ This will:
   - Average illuminance value
   - Median illuminance value
   - Relative path to the image
+
+### Book report (`illuminance_book.html`)
+- Requested and actual page count (after rounding up to multiple of 4)
+- Grid of selected images sorted from lightest to darkest
+- Page 1 = lightest image, last page = darkest image, intermediate pages chosen to spread luminance evenly
+- For each image:
+  - Page number
+  - Embedded thumbnail (max 200px on longest side)
+  - Average and median illuminance values
+  - Absolute path to the original image
 
 ### All images report (`illuminance_report_all.html`)
 - Total number of all images in database

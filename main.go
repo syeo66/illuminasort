@@ -31,10 +31,12 @@ type ImageData struct {
 
 var allFlag bool
 var bookPages int
+var replaceFlag bool
 
 func main() {
 	flag.BoolVar(&allFlag, "all", false, "Generate report from all images in database")
 	flag.IntVar(&bookPages, "book", 0, "Select N images for a book from DB (rounded up to multiple of 4), lightest first, darkest last")
+	flag.BoolVar(&replaceFlag, "replace", false, "Recalculate and replace existing cached values in database")
 	flag.Parse()
 
 	// Initialize database
@@ -102,6 +104,7 @@ func main() {
 		fmt.Println("Usage: illuminasort <directory>")
 		fmt.Println("       illuminasort --all")
 		fmt.Println("       illuminasort --book <pages>")
+		fmt.Println("       illuminasort --replace <directory>  (recalculate existing cached values)")
 		os.Exit(1)
 	}
 
@@ -133,18 +136,20 @@ func main() {
 		}
 
 		// Check if image already exists in database
-		existing, err2 := getImageFromDB(db, absPath)
-		if err2 == nil {
-			// Image exists in database, use cached values
-			fmt.Printf("  (using cached values)\n")
-			relPath, _ := filepath.Rel(dir, imgPath)
-			imageData = append(imageData, ImageData{
-				Path:               imgPath,
-				RelativePath:       relPath,
-				AverageIlluminance: existing.AverageIlluminance,
-				MedianIlluminance:  existing.MedianIlluminance,
-			})
-			continue
+		if !replaceFlag {
+			existing, err2 := getImageFromDB(db, absPath)
+			if err2 == nil {
+				// Image exists in database, use cached values
+				fmt.Printf("  (using cached values)\n")
+				relPath, _ := filepath.Rel(dir, imgPath)
+				imageData = append(imageData, ImageData{
+					Path:               imgPath,
+					RelativePath:       relPath,
+					AverageIlluminance: existing.AverageIlluminance,
+					MedianIlluminance:  existing.MedianIlluminance,
+				})
+				continue
+			}
 		}
 
 		// Calculate illuminance

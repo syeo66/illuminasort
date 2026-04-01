@@ -9,6 +9,7 @@ A Go CLI tool that analyzes image illuminance and generates an HTML report.
 - Generates and stores thumbnails (200px max on longest side) as base64 data URLs
 - Stores all scanned images in a SQLite database (`$HOME/.illuminasort.db`)
 - Caches illuminance calculations and thumbnails to avoid reprocessing the same images
+- `--replace` flag forces recalculation of existing cached entries
 - Generates portable HTML reports with embedded thumbnail data URLs
 - Can generate reports from all images in the database with the `--all` flag
 - Book mode (`--book`) selects a set of images from the database with evenly spread luminance, suitable for print layouts
@@ -48,6 +49,25 @@ This will:
 1. Retrieve all images from the database (from all previously scanned directories)
 2. Generate `illuminance_report_all.html` in the current directory
 3. The report uses embedded thumbnail data URLs, making it completely portable (no external image files needed)
+
+### Force recalculation of cached images
+
+```bash
+./illuminasort --replace <directory>
+```
+
+Example:
+```bash
+./illuminasort --replace ~/Photos
+```
+
+This will:
+1. Scan the specified directory like a normal directory scan
+2. Skip the cache lookup for every image — recalculate illuminance and regenerate thumbnails even if the image is already in the database
+3. Overwrite the existing database entries with the new values
+4. Generate `illuminance_report.html` in the specified directory as usual
+
+Useful when images have been edited in place, or when you want to refresh stale cached data.
 
 ### Select images for a book
 
@@ -109,7 +129,7 @@ All scanned images are stored in `$HOME/.illuminasort.db`. The database contains
 - Thumbnail as base64-encoded data URL (JPEG format, max 200px)
 - Timestamp of last scan
 
-Images are identified by their absolute path, so moving an image will cause it to be rescanned. If you scan the same directory again, previously scanned images will use cached values and thumbnails from the database, making subsequent scans much faster.
+Images are identified by their absolute path, so moving an image will cause it to be rescanned. If you scan the same directory again, previously scanned images will use cached values and thumbnails from the database, making subsequent scans much faster. Use `--replace` to force recalculation of existing entries.
 
 ## Thumbnail Storage
 

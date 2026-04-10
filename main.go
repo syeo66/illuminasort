@@ -32,11 +32,13 @@ type ImageData struct {
 var allFlag bool
 var bookPages int
 var replaceFlag bool
+var cleanupFlag bool
 
 func main() {
 	flag.BoolVar(&allFlag, "all", false, "Generate report from all images in database")
 	flag.IntVar(&bookPages, "book", 0, "Select N images for a book from DB (rounded up to multiple of 4), lightest first, darkest last")
 	flag.BoolVar(&replaceFlag, "replace", false, "Recalculate and replace existing cached values in database")
+	flag.BoolVar(&cleanupFlag, "cleanup", false, "Remove database entries for images that no longer exist on disk")
 	flag.Parse()
 
 	// Initialize database
@@ -100,11 +102,22 @@ func main() {
 		return
 	}
 
+	if cleanupFlag {
+		removed, err := cleanupDB(db)
+		if err != nil {
+			fmt.Printf("Error during cleanup: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Cleanup complete: removed %d missing image(s) from database\n", removed)
+		return
+	}
+
 	if flag.NArg() < 1 {
 		fmt.Println("Usage: illuminasort <directory>")
 		fmt.Println("       illuminasort --all")
 		fmt.Println("       illuminasort --book <pages>")
 		fmt.Println("       illuminasort --replace <directory>  (recalculate existing cached values)")
+		fmt.Println("       illuminasort --cleanup              (remove database entries for missing files)")
 		os.Exit(1)
 	}
 
@@ -777,6 +790,38 @@ func selectBookImages(images []ImageData, requestedPages int) []ImageData {
 	})
 
 	return selected
+}
+
+func cleanupDB(db *sql.DB) (int, error) {
+	rows, err := db.Query(`SELECT path FROM images`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var missing []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return 0, err
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missing = append(missing, path)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	for _, path := range missing {
+		_, err := db.Exec(`DELETE FROM images WHERE path = ?`, path)
+		if err != nil {
+			return 0, err
+		}
+		fmt.Printf("Removed: %s\n", path)
+	}
+
+	return len(missing), nil
 }
 
 func getAllImagesFromDB(db *sql.DB) ([]ImageData, error) {

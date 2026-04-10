@@ -10,6 +10,7 @@ A Go CLI tool that analyzes image illuminance and generates an HTML report.
 - Stores all scanned images in a SQLite database (`$HOME/.illuminasort.db`)
 - Caches illuminance calculations and thumbnails to avoid reprocessing the same images
 - `--replace` flag forces recalculation of existing cached entries
+- `--cleanup` flag removes database entries for image files that no longer exist on disk
 - Generates portable HTML reports with embedded thumbnail data URLs
 - Can generate reports from all images in the database with the `--all` flag
 - Book mode (`--book`) selects a set of images from the database with evenly spread luminance, suitable for print layouts
@@ -68,6 +69,20 @@ This will:
 4. Generate `illuminance_report.html` in the specified directory as usual
 
 Useful when images have been edited in place, or when you want to refresh stale cached data.
+
+### Remove database entries for missing files
+
+```bash
+./illuminasort --cleanup
+```
+
+This will:
+1. Scan all entries in the database
+2. Check whether each image file still exists on disk
+3. Remove entries for any files that are no longer found
+4. Print each removed path and report the total count
+
+Useful for keeping the database tidy after deleting or moving image files.
 
 ### Select images for a book
 

@@ -14,6 +14,8 @@ A Go CLI tool that analyzes image illuminance and generates an HTML report.
 - Generates portable HTML reports with embedded thumbnail data URLs
 - Can generate reports from all images in the database with the `--all` flag
 - Book mode (`--book`) selects a set of images from the database with evenly spread luminance, suitable for print layouts
+- Book mode supports three orientation-aware sub-modes via `--book-mode`: `landscape`, `portrait`, and `smart`
+- Square images act as orientation-neutral jokers and qualify for both landscape and portrait pools
 
 ## Installation
 
@@ -87,7 +89,7 @@ Useful for keeping the database tidy after deleting or moving image files.
 ### Select images for a book
 
 ```bash
-./illuminasort --book <pages>
+./illuminasort --book <pages> [--book-mode landscape|portrait|smart]
 ```
 
 Example:
@@ -102,6 +104,30 @@ This will:
 4. Always assign the lightest image to page 1 and the darkest to the last page
 5. Sort the final selection from lightest to darkest
 6. Generate `illuminance_book.html` in the current directory
+
+#### Book mode options
+
+**`--book-mode landscape`** — Portrait (or square) anchors on page 1 and the last page; all middle pages are landscape (or square) images selected with evenly spread luminance.
+
+```bash
+./illuminasort --book 20 --book-mode landscape
+```
+
+**`--book-mode portrait`** — Selects only portrait and square images, spread evenly by luminance with the lightest on page 1 and darkest on the last page.
+
+```bash
+./illuminasort --book 20 --book-mode portrait
+```
+
+**`--book-mode smart`** — Portrait (or square) anchors on page 1 and the last page. Each middle spread is either:
+- **One landscape image** spanning two pages, or
+- **Two portrait images** side by side — lighter on the left (even page), darker on the right (odd page)
+
+The choice per spread is luminance-driven: landscape wins only when its closest available image is nearer to the target luminance than the average distance of the two best portrait candidates. Square images are jokers and can fill either role, but are used at most once.
+
+```bash
+./illuminasort --book 20 --book-mode smart
+```
 
 ## Output
 
@@ -120,7 +146,7 @@ This will:
 - Grid of selected images sorted from lightest to darkest
 - Page 1 = lightest image, last page = darkest image, intermediate pages chosen to spread luminance evenly
 - For each image:
-  - Page number
+  - Page number (and orientation label in `--book-mode smart`)
   - Embedded thumbnail (max 200px on longest side)
   - Average and median illuminance values
   - Absolute path to the original image
@@ -142,6 +168,7 @@ All scanned images are stored in `$HOME/.illuminasort.db`. The database contains
 - Average illuminance value
 - Median illuminance value
 - Thumbnail as base64-encoded data URL (JPEG format, max 200px)
+- Image width and height in pixels (used for orientation detection)
 - Timestamp of last scan
 
 Images are identified by their absolute path, so moving an image will cause it to be rescanned. If you scan the same directory again, previously scanned images will use cached values and thumbnails from the database, making subsequent scans much faster. Use `--replace` to force recalculation of existing entries.

@@ -895,33 +895,40 @@ func selectSmartBookImages(images []ImageData, requestedPages int) SmartBook {
 	numSpreads := (pages - 2) / 2
 	spreads := make([]Spread, 0, numSpreads)
 
+	numLandscapes := len(landscapes)
+	numPortraits := len(portraits)
+
 	type candidate struct {
 		img  ImageData
 		dist float64
 	}
 
 	for i := 0; i < numSpreads; i++ {
-		target := maxLum - (maxLum-minLum)*float64(i+1)/float64(numSpreads+1)
+		// Select which image from each pool using index-based targeting so that
+		// images are drawn from evenly-spaced positions in the sorted pool. This
+		// prevents ordering inversions when the dark end of the pool is exhausted.
+		// Pools are sorted ascending (index 0 = darkest, N-1 = lightest), so
+		// spread 0 (brightest) targets the high end and the last spread targets index 0.
+		landTargetIdx := float64(numSpreads-i) / float64(numSpreads+1) * float64(numLandscapes-1)
+		portTargetIdx := float64(numSpreads-i) / float64(numSpreads+1) * float64(numPortraits-1)
 
-		// Find closest unused landscape (includes squares as jokers)
 		var landCandidates []candidate
-		for _, l := range landscapes {
+		for j, l := range landscapes {
 			if usedPaths[l.Path] {
 				continue
 			}
-			landCandidates = append(landCandidates, candidate{l, math.Abs(l.AverageIlluminance - target)})
+			landCandidates = append(landCandidates, candidate{l, math.Abs(float64(j) - landTargetIdx)})
 		}
 		sort.Slice(landCandidates, func(a, b int) bool {
 			return landCandidates[a].dist < landCandidates[b].dist
 		})
 
-		// Find closest unused portraits (includes squares as jokers)
 		var portCandidates []candidate
-		for _, p := range portraits {
+		for j, p := range portraits {
 			if usedPaths[p.Path] {
 				continue
 			}
-			portCandidates = append(portCandidates, candidate{p, math.Abs(p.AverageIlluminance - target)})
+			portCandidates = append(portCandidates, candidate{p, math.Abs(float64(j) - portTargetIdx)})
 		}
 		sort.Slice(portCandidates, func(a, b int) bool {
 			return portCandidates[a].dist < portCandidates[b].dist
@@ -929,8 +936,12 @@ func selectSmartBookImages(images []ImageData, requestedPages int) SmartBook {
 
 		startPage := 2 + i*2
 
+		// Decide landscape vs portrait using luminance distance so the comparison
+		// is in consistent units regardless of the two pools having different sizes.
+		target := maxLum - (maxLum-minLum)*float64(i+1)/float64(numSpreads+1)
 		useLandscape := len(landCandidates) > 0 && (len(portCandidates) < 2 ||
-			landCandidates[0].dist < (portCandidates[0].dist+portCandidates[1].dist)/2)
+			math.Abs(landCandidates[0].img.AverageIlluminance-target) <
+				(math.Abs(portCandidates[0].img.AverageIlluminance-target)+math.Abs(portCandidates[1].img.AverageIlluminance-target))/2)
 
 		if useLandscape {
 			chosen := landCandidates[0].img

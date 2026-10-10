@@ -30,3 +30,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build output and generated reports
+/illuminasort
+illuminance_report.html
+illuminance_report_all.html
+illuminance_book.html

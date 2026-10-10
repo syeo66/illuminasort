@@ -1,4 +1,4 @@
-.PHONY: all build test install clean
+.PHONY: all build test vet install clean
 
 BINARY_NAME=illuminasort
 INSTALL_DIR=$(HOME)/bin
@@ -8,7 +8,10 @@ all: build
 build:
 	go build -o $(BINARY_NAME)
 
-test:
+vet:
+	go vet ./...
+
+test: vet
 	go test ./...
 
 install: build

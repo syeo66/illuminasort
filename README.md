@@ -4,11 +4,13 @@ A Go CLI tool that analyzes image illuminance and generates an HTML report.
 
 ## Features
 
-- Recursively scans directories for images (JPG, JPEG, PNG, GIF)
+- Recursively scans directories for images (JPG, JPEG, PNG, GIF, WebP); unreadable subdirectories are skipped with a warning
+- Analyzes images in parallel (`--jobs`, defaults to the number of CPUs)
+- Honors EXIF orientation, so rotated phone photos get the right orientation and upright thumbnails
 - Calculates average and median illuminance for each image using ITU-R BT.709 coefficients
-- Generates and stores thumbnails (200px max on longest side) as base64 data URLs
-- Stores all scanned images in a SQLite database (`$HOME/.illuminasort.db`)
-- Caches illuminance calculations and thumbnails to avoid reprocessing the same images
+- Generates and stores JPEG thumbnails (200px max on longest side), embedded in reports as data URLs
+- Stores all scanned images in a SQLite database (`$HOME/.illuminasort.db`, override with `--db`)
+- Caches illuminance calculations and thumbnails, and re-analyzes files whose modification time or size changed
 - `--replace` flag forces recalculation of existing cached entries
 - `--cleanup` flag removes database entries for image files that no longer exist on disk
 - Generates portable HTML reports with embedded thumbnail data URLs
@@ -20,7 +22,9 @@ A Go CLI tool that analyzes image illuminance and generates an HTML report.
 ## Installation
 
 ```bash
-go build -o illuminasort
+make build      # or: go build -o illuminasort
+make install    # copies the binary to ~/bin
+make test
 ```
 
 ## Usage
@@ -41,6 +45,15 @@ This will:
 2. Calculate illuminance values and generate thumbnails for each image (or use cached values from database)
 3. Store absolute paths, illuminance values, and thumbnail data URLs in the database (`$HOME/.illuminasort.db`)
 4. Generate `illuminance_report.html` in the specified directory with relative image paths
+
+Flags must come before the directory (`illuminasort --replace ~/Photos`, not `illuminasort ~/Photos --replace`). Directory scans, `--all`, `--book` and `--cleanup` are separate modes and cannot be combined.
+
+### Common flags
+
+| Flag | Description |
+|------|-------------|
+| `--db <path>` | Use a different database file (default `$HOME/.illuminasort.db`) |
+| `--jobs <n>` | Number of images analyzed in parallel (default: number of CPUs). Each job holds one decoded image in memory, so lower this for very large photos on machines with little RAM |
 
 ### Generate report from all scanned images
 
@@ -70,7 +83,7 @@ This will:
 3. Overwrite the existing database entries with the new values
 4. Generate `illuminance_report.html` in the specified directory as usual
 
-Useful when images have been edited in place, or when you want to refresh stale cached data.
+Edited files are detected automatically (by modification time and size), so this is mainly useful after upgrading illuminasort or to rebuild suspicious cache entries.
 
 ### Remove database entries for missing files
 
@@ -105,7 +118,11 @@ This will:
 5. Sort the final selection from lightest to darkest
 6. Generate `illuminance_book.html` in the current directory
 
+If there are not enough images to fill the book, the report and the console both say how many pages could be filled.
+
 #### Book mode options
+
+The orientation modes need image dimensions. Entries from very old databases may lack them; those images are skipped with a warning until their directory is scanned again.
 
 **`--book-mode landscape`** — Portrait (or square) anchors on page 1 and the last page; all middle pages are landscape (or square) images selected with evenly spread luminance.
 
@@ -167,15 +184,18 @@ All scanned images are stored in `$HOME/.illuminasort.db`. The database contains
 - Image absolute path (unique identifier)
 - Average illuminance value
 - Median illuminance value
-- Thumbnail as base64-encoded data URL (JPEG format, max 200px)
-- Image width and height in pixels (used for orientation detection)
+- Thumbnail as JPEG bytes (max 200px on the longest side)
+- Image width and height in pixels, after EXIF orientation (used for orientation detection)
+- File modification time and size (used to detect edited files)
 - Timestamp of last scan
 
-Images are identified by their absolute path, so moving an image will cause it to be rescanned. If you scan the same directory again, previously scanned images will use cached values and thumbnails from the database, making subsequent scans much faster. Use `--replace` to force recalculation of existing entries.
+Images are identified by their absolute path, so moving an image will cause it to be rescanned. If you scan the same directory again, unchanged images use cached values and thumbnails from the database, making subsequent scans much faster. Use `--replace` to force recalculation of existing entries.
+
+Databases created by older versions are migrated automatically the first time they are opened. Migrated entries keep their values, but are re-analyzed the next time their directory is scanned, which picks up EXIF orientation and the change detection data.
 
 ## Thumbnail Storage
 
-Thumbnails are stored as base64-encoded data URLs in the database. This approach has several benefits:
+Thumbnails are stored as JPEG bytes in the database and embedded into reports as base64 data URLs. Transparent areas are flattened onto white. This approach has several benefits:
 - **Portable reports**: The `--all` report can be moved or shared without needing access to the original images
 - **Fast loading**: Thumbnails are embedded directly in the HTML (no separate HTTP requests)
 - **Database-complete**: All image information is self-contained in the database
@@ -190,3 +210,5 @@ Luminance = 0.2126 × R + 0.7152 × G + 0.0722 × B
 ```
 
 Where R, G, B are the red, green, and blue color values (0-255).
+
+Strictly speaking this is *luma*: the BT.709 weights are applied to gamma-encoded sRGB values rather than linear light. That is fine for ranking images by brightness, but the numbers are not photometric luminance. Transparent pixels count as black.

@@ -126,6 +126,7 @@ func scanDirectory(db *sql.DB, dir string, replace bool, jobs int) ([]ImageData,
 	}()
 
 	// Results are written to the database from this goroutine only
+	writer := &batchWriter{db: db}
 	processed := 0
 	for r := range done {
 		processed++
@@ -145,10 +146,13 @@ func scanDirectory(db *sql.DB, dir string, replace bool, jobs int) ([]ImageData,
 			ModTime:            r.file.ModTime,
 			Size:               r.file.Size,
 		}
-		if err := saveImage(db, img); err != nil {
+		if err := writer.save(img); err != nil {
 			warnf("failed to save %s to database: %v", r.file.AbsPath, err)
 		}
 		results = append(results, img)
+	}
+	if err := writer.flush(); err != nil {
+		warnf("failed to save results to database: %v", err)
 	}
 
 	sortByLuminance(results)

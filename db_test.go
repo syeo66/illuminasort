@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -182,5 +183,26 @@ func TestFindImagesSkipsUnreadableDirectories(t *testing.T) {
 	}
 	if len(files) != 1 || files[0].RelPath != "ok.png" {
 		t.Errorf("got %+v, want only ok.png", files)
+	}
+}
+
+func TestBatchWriterSavesAllImages(t *testing.T) {
+	db := openTestDB(t)
+	w := &batchWriter{db: db}
+	const n = saveBatchSize*2 + 5 // two full batches and a partial one
+	for i := range n {
+		if err := w.save(ImageData{Path: fmt.Sprintf("/img/%d.jpg", i), Thumbnail: []byte{1}, Width: 1, Height: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.flush(); err != nil {
+		t.Fatal(err)
+	}
+	images, err := getAllImages(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != n {
+		t.Errorf("got %d images, want %d", len(images), n)
 	}
 }

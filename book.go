@@ -76,6 +76,19 @@ func splitByOrientation(images []ImageData) (portraits, landscapes []ImageData, 
 	return portraits, landscapes, unknown
 }
 
+// withinAnchors keeps the images whose luminance lies between the darkest and
+// lightest anchor, so that no middle page is lighter than page 1 or darker
+// than the last page.
+func withinAnchors(images []ImageData, lightest, darkest ImageData) []ImageData {
+	var kept []ImageData
+	for _, img := range images {
+		if img.AverageIlluminance >= darkest.AverageIlluminance && img.AverageIlluminance <= lightest.AverageIlluminance {
+			kept = append(kept, img)
+		}
+	}
+	return kept
+}
+
 // selectBookImages picks a book's worth of images (rounded up to a multiple of 4).
 func selectBookImages(images []ImageData, requestedPages int) []ImageData {
 	return selectNImages(images, roundUpToMultipleOf4(requestedPages))
@@ -167,7 +180,7 @@ func selectLandscapeBookImages(allImages []ImageData, requestedPages int) ([]Ima
 	// Exclude anchor images from the landscape pool to avoid reuse
 	usedPaths := map[string]bool{firstPage.Path: true, lastPage.Path: true}
 	var availLandscapes []ImageData
-	for _, img := range landscapes {
+	for _, img := range withinAnchors(landscapes, firstPage, lastPage) {
 		if !usedPaths[img.Path] {
 			availLandscapes = append(availLandscapes, img)
 		}
@@ -206,6 +219,7 @@ func selectSmartBookImages(images []ImageData, requestedPages int) (SmartBook, e
 
 	firstPage := portraits[len(portraits)-1] // lightest
 	lastPage := portraits[0]                 // darkest
+	landscapes = withinAnchors(landscapes, firstPage, lastPage)
 
 	maxLum := firstPage.AverageIlluminance
 	minLum := lastPage.AverageIlluminance

@@ -177,11 +177,56 @@ func decodeDataURL(s string) ([]byte, bool) {
 	return data, true
 }
 
-func saveImage(db *sql.DB, img ImageData) error {
+// execer is satisfied by both *sql.DB and *sql.Tx.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func saveImage(db execer, img ImageData) error {
 	_, err := db.Exec(`
 		INSERT OR REPLACE INTO images (`+imageColumns+`, scanned_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, img.Path, img.AverageIlluminance, img.MedianIlluminance, img.Thumbnail, img.Width, img.Height, img.ModTime, img.Size)
+	return err
+}
+
+// saveBatchSize is how many images are saved per transaction. An interrupted
+// scan loses at most this many analyses.
+const saveBatchSize = 100
+
+// batchWriter groups saves into transactions, since committing every row on
+// its own waits for a disk sync per image.
+type batchWriter struct {
+	db *sql.DB
+	tx *sql.Tx
+	n  int
+}
+
+func (w *batchWriter) save(img ImageData) error {
+	if w.tx == nil {
+		tx, err := w.db.Begin()
+		if err != nil {
+			return err
+		}
+		w.tx = tx
+	}
+	if err := saveImage(w.tx, img); err != nil {
+		return err
+	}
+	w.n++
+	if w.n >= saveBatchSize {
+		return w.flush()
+	}
+	return nil
+}
+
+// flush commits the pending saves, if any.
+func (w *batchWriter) flush() error {
+	if w.tx == nil {
+		return nil
+	}
+	err := w.tx.Commit()
+	w.tx, w.n = nil, 0
 	return err
 }
 

@@ -168,3 +168,35 @@ func TestSelectSmartBookReportsShortfall(t *testing.T) {
 		t.Errorf("filled %d pages, want 4 (two anchors + one landscape spread)", book.FilledPages())
 	}
 }
+
+func TestLandscapeBookStaysWithinAnchors(t *testing.T) {
+	// The lightest and darkest landscapes fall outside the portrait anchors
+	images := []ImageData{
+		testImage("p-dark", 10, 2, 3), testImage("p-light", 50, 2, 3),
+		testImage("l-darker", 5, 3, 2), testImage("l-mid", 30, 3, 2), testImage("l-lighter", 80, 3, 2),
+	}
+	selected, err := selectLandscapeBookImages(images, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLightestFirst(t, selected)
+	if len(selected) != 3 || selected[1].Path != "/img/l-mid" {
+		t.Errorf("got %v, want p-light, l-mid, p-dark", selected)
+	}
+}
+
+func TestSmartBookStaysWithinAnchors(t *testing.T) {
+	images := []ImageData{
+		testImage("p-dark", 10, 2, 3), testImage("p-light", 50, 2, 3),
+		testImage("l-darker", 5, 3, 2), testImage("l-mid", 30, 3, 2), testImage("l-lighter", 80, 3, 2),
+	}
+	book, err := selectSmartBookImages(images, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range book.Spreads {
+		if s.Type == SpreadLandscape && s.Single.Path != "/img/l-mid" {
+			t.Errorf("landscape spread uses %s, which lies outside the anchors", s.Single.Path)
+		}
+	}
+}

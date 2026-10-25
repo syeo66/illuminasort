@@ -124,28 +124,41 @@ func smartBookReport(book SmartBook, requestedPages int) report {
 		Title:    "Book Image Selection (Smart)",
 		Stats:    stats,
 		Warnings: warnings,
-		Note:     "Page 1 (lightest portrait) • Middle spreads: landscape or portrait pairs • Last page (darkest portrait)",
+		Note:     "Page 1 (lightest) • Middle spreads: one landscape or two single pages • Last page (darkest)",
 	}
-	page := func(img ImageData, number int, label string) {
+	// Labels come from each image's own orientation: when there are too few
+	// portraits, landscapes fill the anchor and single-page slots.
+	page := func(img ImageData, number int, position string) {
 		c := imageCard(img, thumbnailURL(img.Thumbnail), img.Path)
 		c.Heading = fmt.Sprintf("Page %d", number)
-		c.Label = label
+		c.Label = fmt.Sprintf("%s (%s)", orientationName(img), position)
 		r.Cards = append(r.Cards, c)
 	}
 
-	page(book.FirstPage, 1, "portrait (lightest)")
+	page(book.FirstPage, 1, "lightest")
 	for _, s := range book.Spreads {
 		if s.Type == SpreadLandscape {
-			page(s.Single, s.StartPage, fmt.Sprintf("landscape (pages %d–%d)", s.StartPage, s.StartPage+1))
+			page(s.Single, s.StartPage, fmt.Sprintf("pages %d–%d", s.StartPage, s.StartPage+1))
 			continue
 		}
 		if s.HasLeft {
-			page(s.Left, s.StartPage, "portrait (left)")
+			page(s.Left, s.StartPage, "left")
 		}
 		if s.HasRight {
-			page(s.Right, s.StartPage+1, "portrait (right)")
+			page(s.Right, s.StartPage+1, "right")
 		}
 	}
-	page(book.LastPage, book.TotalPages, "portrait (darkest)")
+	page(book.LastPage, book.TotalPages, "darkest")
 	return r
+}
+
+func orientationName(img ImageData) string {
+	switch {
+	case img.IsLandscape():
+		return "landscape"
+	case img.IsSquare():
+		return "square"
+	default:
+		return "portrait"
+	}
 }

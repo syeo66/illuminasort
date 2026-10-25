@@ -43,3 +43,19 @@ func TestBookReportWarnsWhenShort(t *testing.T) {
 		t.Errorf("missing shortfall warning:\n%s", out)
 	}
 }
+
+func TestSmartBookReportLabelsActualOrientation(t *testing.T) {
+	// Only one portrait, so smart mode falls back to landscapes for the anchors
+	images := []ImageData{testImage("p", 100, 2, 3), testImage("l-dark", 10, 3, 2), testImage("l-light", 200, 3, 2)}
+	book, err := selectSmartBookImages(images, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := smartBookReport(book, 4)
+	if first := r.Cards[0].Label; first != "landscape (lightest)" {
+		t.Errorf("first page label = %q, want %q", first, "landscape (lightest)")
+	}
+	if last := r.Cards[len(r.Cards)-1].Label; last != "landscape (darkest)" {
+		t.Errorf("last page label = %q, want %q", last, "landscape (darkest)")
+	}
+}
